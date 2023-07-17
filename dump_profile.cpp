@@ -47,6 +47,7 @@ protected:
     std::atomic<uint64_t> tsc_ticks_per_second{0};
     std::atomic<uint64_t> tsc_ticks_base{0};
     std::mutex _mutex;
+
 public:
     ProfilerManager()
     {
@@ -113,30 +114,23 @@ private:
             fprintf(pf, "\"tid\":\"%s\",", itm.tid.c_str());
             fprintf(pf, "\"ts\":\"%s\",", tsc_to_nsec(itm.ts1).c_str());
             fprintf(pf, "\"dur\":\"%s\",", tsc_to_nsec(itm.ts1, itm.ts2).c_str());
-            fprintf(pf, "\"args\":{}");
-            // fprintf(pf, "\"args\":\"%s\"\n", itm.name.c_str());
-
-            fprintf(pf, "}%s\n", i == _vecItems.size() - 1 ? "" : ",");
+            fprintf(pf, "\"args\":{");
+            for (size_t j = 0; j < itm.vecArgs.size(); j++)
+            {
+                fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
+            }
+            fprintf(pf, "}}%s\n", i == _vecItems.size() - 1 ? "" : ",");
         }
-
-        //         std::string name;   // The name of the event, as displayed in Trace Viewer
-        // std::string cat;    // The event categories
-        // std::string ph;     // The event type
-        // std::string pid;    // The process ID for the process
-        // std::string tid;    // The thread ID for the thread that output this event.
-        // uint64_t ts;     // The tracing clock timestamp of the event, [microsecond]
-        // uint64_t dur;    // Duration of time.
-        // std::string tts;    // Optional. The thread clock timestamp of the event
-        // std::vector<std::pair<std::string, std::string>> vecArgs;
 
         fprintf(pf, "]\n}\n");
         fclose(pf);
     }
 };
 static ProfilerManager g_profileManage;
-MyProfile::MyProfile(const std::string &name)
+MyProfile::MyProfile(const std::string &name, const std::vector<std::pair<std::string, std::string>> &args)
 {
     _name = name;
+    _args = args;
     _ts1 = __rdtsc();
 }
 
@@ -148,5 +142,6 @@ MyProfile::~MyProfile()
     itm.name = _name;
     itm.tid = get_thread_id();
     itm.cat = "PERF";
+    itm.vecArgs = _args;
     g_profileManage.add(itm);
 }
