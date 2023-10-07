@@ -8,8 +8,10 @@
 
 #ifdef WIN32
 #include <intrin.h>
+#include <Windows.h>
 #else
 #include <x86intrin.h>
+#include <dlfcn.h>
 #endif
 #pragma intrinsic(__rdtsc)
 
@@ -20,8 +22,8 @@ struct dump_items
     std::string ph = "X";  // The event type, 'B'/'E' OR 'X'
     std::string pid = "0"; // The process ID for the process
     std::string tid;       // The thread ID for the thread that output this event.
-    uint64_t ts1;          // The tracing clock timestamp of the event, [microsecond]
-    uint64_t ts2;          // Duration = ts2 - ts1.
+    uint64_t ts1 = 0;      // The tracing clock timestamp of the event, [microsecond]
+    uint64_t ts2 = 0;      // Duration = ts2 - ts1.
     std::string tts;       // Optional. The thread clock timestamp of the event
     std::vector<std::pair<std::string, std::string>> vecArgs;
 };
@@ -38,6 +40,24 @@ static uint64_t rdtsc_calibrate(int seconds = 1)
     uint64_t start_ticks = __rdtsc();
     std::this_thread::sleep_for(std::chrono::seconds(seconds));
     return (__rdtsc() - start_ticks) / seconds;
+}
+
+inline std::string location(void)
+{
+#ifdef _WIN32
+	TCHAR path[1024];
+	::GetModuleFileNameA(NULL, path, 1024);
+	std::string dll_fn = std::string(path);
+    std::string fn = dll_fn.substr(dll_fn.find_last_of("\\") + 1, dll_fn.length());
+#else
+    Dl_info info;
+    dladdr(reinterpret_cast<void *>(&location), &info);
+    std::string dll_fn = std::string(info.dli_fname);
+    std::string fn = dll_fn.substr(dll_fn.find_last_of("/") + 1, dll_fn.length());
+#endif
+
+    fn = fn.substr(0, fn.find_last_of("."));
+    return fn;
 }
 
 class ProfilerManager
@@ -67,7 +87,6 @@ public:
     ~ProfilerManager()
     {
         // Save tracing log to json file.
-        printf("ProfilerManager unconstruct...............\n");
         save_to_json();
     }
 
@@ -92,10 +111,17 @@ private:
 
     void save_to_json()
     {
-        FILE *pf = fopen("profile.json", "wb");
+        std::string json_fn = "profile_" + location() + ".json";
+        FILE *pf;
+#ifdef _WIN32
+        errno_t err = fopen_s(&pf, json_fn.c_str(), "wb");
+        if (err != 0)
+#else
+        pf = fopen(json_fn.c_str(), "wb");
         if (nullptr == pf)
+#endif
         {
-            printf("Can't fopen profile.json.");
+            printf("Can't fopen:%s", json_fn.c_str());
             return;
         }
 
@@ -124,6 +150,7 @@ private:
 
         fprintf(pf, "]\n}\n");
         fclose(pf);
+        printf("Saved to:%s", json_fn.c_str());
     }
 };
 static ProfilerManager g_profileManage;
