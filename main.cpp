@@ -5,7 +5,7 @@
 void example_1()
 {
     // Example: MY_PROFILE, MY_PROFILE_ARGS
-    auto p = MyProfile(__FUNCTION__);
+    auto p = MY_PROFILE(__FUNCTION__);
     {
         auto p1 = MY_PROFILE("sleep_20");
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
