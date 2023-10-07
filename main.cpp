@@ -11,7 +11,7 @@ void example_1()
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     {
-        auto p2 = MY_PROFILE("sleep_30", {{"arg1", "sleep 30 ms"}});
+        auto p2 = MY_PROFILE_ARGS("sleep_30", {{"arg1", "sleep 30 ms"}});
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
 }
@@ -24,7 +24,7 @@ void example_2()
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     {
-        MY_PROFILE_VAR(p2, "sleep_30", {{"arg1", "sleep 30 ms"}});
+        MY_PROFILE_VAR_ARGS(p2, "sleep_30", {{"arg1", "sleep 30 ms"}});
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
 }

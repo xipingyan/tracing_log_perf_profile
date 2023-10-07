@@ -27,7 +27,7 @@ Or
 }
 Or
 {
-    auto p2 = MY_PROFILE("fun_name", {{"arg1", "sleep 30 ms"}});
+    auto p2 = MY_PROFILE_ARGS("fun_name", {{"arg1", "sleep 30 ms"}});
     func()
 }
 ******************************************************/
@@ -36,15 +36,15 @@ Or
 #define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) auto VAR = MY_PROFILE_ARGS(NAME, __VA_ARGS__)
 // Example 2: MY_PROFILE / MY_PROFILE_ARGS
 /******************************************************
-auto p = MY_PROFILE("fun_name")
+MY_PROFILE_VAR(p, "fun_name")
 Or
 {
-    auto p = MY_PROFILE("fun_name")
+    MY_PROFILE_VAR(p1, "fun_name")
     func()
 }
 Or
 {
-    auto p2 = MY_PROFILE("fun_name", {{"arg1", "sleep 30 ms"}});
+    MY_PROFILE_VAR_ARGS(p2, "fun_name", {{"arg1", "sleep 30 ms"}});
     func()
 }
 ******************************************************/

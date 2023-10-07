@@ -6,7 +6,7 @@
 #include <vector>
 #include <iostream>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <intrin.h>
 #include <Windows.h>
 #else
@@ -150,7 +150,7 @@ private:
 
         fprintf(pf, "]\n}\n");
         fclose(pf);
-        printf("Saved to:%s", json_fn.c_str());
+        printf("Profiler log is saved to: %s\n", json_fn.c_str());
     }
 };
 static ProfilerManager g_profileManage;
