@@ -2,6 +2,29 @@
 #include <string>
 #include <vector>
 
+// Control whether or not to print memory usage to a log file.
+#ifndef ENABLE_TRACE_MEM_USAGE
+#define ENABLE_TRACE_MEM_USAGE 1
+#endif // !ENABLE_TRACE_MEM_USAGE
+
+#if ENABLE_TRACE_MEM_USAGE
+
+#ifndef CAT
+#define TOKEN_PASTE(x, y) x##y
+#define CAT(x,y) TOKEN_PASTE(x,y)
+#endif // CAT
+
+class MyProfileMem
+{
+public:
+    MyProfileMem();
+    ~MyProfileMem() = default;
+};
+#define MY_PROFILE_MEM() auto CAT(var_, __LINE__) = MyProfileMem()
+#else
+#define MY_PROFILE_MEM()
+#endif // !ENABLE_TRACE_MEM_USAGE
+
 class MyProfile
 {
 public:
@@ -34,7 +57,7 @@ Or
 
 #define MY_PROFILE_VAR(VAR, NAME) auto VAR = MY_PROFILE(NAME)
 #define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) auto VAR = MY_PROFILE_ARGS(NAME, __VA_ARGS__)
-// Example 2: MY_PROFILE / MY_PROFILE_ARGS
+// Example 2: MY_PROFILE_VAR / MY_PROFILE_VAR_ARGS
 /******************************************************
 MY_PROFILE_VAR(p, "fun_name")
 Or

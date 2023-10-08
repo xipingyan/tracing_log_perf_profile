@@ -1,4 +1,5 @@
 #include "dump_profile.hpp"
+#include "hook_mem_record.hpp"
 #include <thread>
 #include <sstream>
 #include <atomic>
@@ -14,6 +15,19 @@
 #include <dlfcn.h>
 #endif
 #pragma intrinsic(__rdtsc)
+
+#if ENABLE_TRACE_MEM_USAGE
+struct dump_mem_items
+{
+    std::string name;      // The name of the event, as displayed in Trace Viewer
+    std::string ph = "C";  // The event type, 'B'/'E' OR 'X'
+    std::string pid = "0"; // The process ID for the process
+    std::string tid;
+    uint64_t ts = 0;
+    // Args
+    std::vector<std::pair<std::string, std::string>> vecArgs;
+};
+#endif // ENABLE_TRACE_MEM_USAGE
 
 struct dump_items
 {
@@ -64,6 +78,9 @@ class ProfilerManager
 {
 protected:
     std::vector<dump_items> _vecItems;
+    #if ENABLE_TRACE_MEM_USAGE
+    std::vector<dump_mem_items> _vecMemItems;
+    #endif
     std::atomic<uint64_t> tsc_ticks_per_second{0};
     std::atomic<uint64_t> tsc_ticks_base{0};
     std::mutex _mutex;
@@ -95,6 +112,14 @@ public:
         std::lock_guard<std::mutex> lk(_mutex);
         _vecItems.emplace_back(val);
     }
+
+#if ENABLE_TRACE_MEM_USAGE
+    void add_mem(const dump_mem_items &val)
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        _vecMemItems.emplace_back(val);
+    }
+#endif // ENABLE_TRACE_MEM_USAGE
 
 private:
     std::string tsc_to_nsec(uint64_t tsc_ticks)
@@ -128,6 +153,27 @@ private:
         // Headers
         fprintf(pf, "{\n\"schemaVersion\": 1,\n\"traceEvents\":[\n");
 
+// Save mem satistic.
+#if ENABLE_TRACE_MEM_USAGE
+        for (size_t i = 0; i < _vecMemItems.size(); i++)
+        {
+            auto &itm = _vecMemItems[i];
+            // Write 1 event
+            fprintf(pf, "{");
+            fprintf(pf, "\"name\":\"%s\",", itm.name.c_str());
+            fprintf(pf, "\"ph\":\"%s\",", itm.ph.c_str());
+            fprintf(pf, "\"pid\":\"%s\",", itm.pid.c_str());
+            fprintf(pf, "\"ts\":\"%s\",", tsc_to_nsec(itm.ts).c_str());
+            fprintf(pf, "\"args\":{");
+            for (size_t j = 0; j < itm.vecArgs.size(); j++)
+            {
+                fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
+            }
+            fprintf(pf, "}},\n");
+        }
+        fprintf(pf, "{}%s\n", (_vecItems.size() == 0) ? "" : ",");
+#endif
+
         for (size_t i = 0; i < _vecItems.size(); i++)
         {
             auto &itm = _vecItems[i];
@@ -145,7 +191,11 @@ private:
             {
                 fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
             }
-            fprintf(pf, "}}%s\n", i == _vecItems.size() - 1 ? "" : ",");
+            fprintf(pf, "}},\n");
+        }
+        if (_vecItems.size() > 0)
+        {
+            fprintf(pf, "{}\n");
         }
 
         fprintf(pf, "]\n}\n");
@@ -172,3 +222,16 @@ MyProfile::~MyProfile()
     itm.vecArgs = _args;
     g_profileManage.add(itm);
 }
+
+#if ENABLE_TRACE_MEM_USAGE
+MyProfileMem::MyProfileMem()
+{
+    dump_mem_items itm;
+    itm.ts = __rdtsc();
+    itm.name = "mem";
+    itm.tid = get_thread_id();
+    auto mem_size = RecordMem::getInstance()->getMemSize();
+    itm.vecArgs.push_back({"cats", std::to_string(mem_size)});
+    g_profileManage.add_mem(itm);
+}
+#endif // !ENABLE_TRACE_MEM_USAGE
