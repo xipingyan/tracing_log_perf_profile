@@ -2,10 +2,10 @@
 #include <string>
 #include <vector>
 
+// Control whether or not tp save tracing log.
+#define ENABLE_TRACE_LOG 1
 // Control whether or not to print memory usage to a log file.
-#ifndef ENABLE_TRACE_MEM_USAGE
 #define ENABLE_TRACE_MEM_USAGE 1
-#endif // !ENABLE_TRACE_MEM_USAGE
 
 #if ENABLE_TRACE_MEM_USAGE
 
@@ -25,6 +25,7 @@ public:
 #define MY_PROFILE_MEM()
 #endif // !ENABLE_TRACE_MEM_USAGE
 
+#if ENABLE_TRACE_LOG
 class MyProfile
 {
 public:
@@ -38,25 +39,8 @@ private:
     std::vector<std::pair<std::string, std::string>> _args;
 };
 
-#define MY_PROFILE(NAME) MyProfile(NAME + std::string(":") + std::to_string(__LINE__))
-#define MY_PROFILE_ARGS(NAME, ...) MyProfile(NAME + std::string(":") + std::to_string(__LINE__), __VA_ARGS__)
-// Example 1: MY_PROFILE / MY_PROFILE_ARGS
-/******************************************************
-auto p = MY_PROFILE("fun_name")
-Or
-{
-    auto p = MY_PROFILE("fun_name")
-    func()
-}
-Or
-{
-    auto p2 = MY_PROFILE_ARGS("fun_name", {{"arg1", "sleep 30 ms"}});
-    func()
-}
-******************************************************/
-
-#define MY_PROFILE_VAR(VAR, NAME) auto VAR = MY_PROFILE(NAME)
-#define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) auto VAR = MY_PROFILE_ARGS(NAME, __VA_ARGS__)
+#define MY_PROFILE_VAR(VAR, NAME) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__))
+#define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__), __VA_ARGS__)
 // Example 2: MY_PROFILE_VAR / MY_PROFILE_VAR_ARGS
 /******************************************************
 MY_PROFILE_VAR(p, "fun_name")
@@ -71,3 +55,7 @@ Or
     func()
 }
 ******************************************************/
+#else
+#define MY_PROFILE_VAR(VAR, NAME) 
+#define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) 
+#endif

@@ -8,9 +8,12 @@ file(GLOB SOURCES "./*.cpp")
 
 add_executable(${PRJ_NAME} ${SOURCES})
 
+add_subdirectory(mylib)
+
 if (UNIX)
 target_link_libraries(${PRJ_NAME} 
     dl # For dladdr
+    lib1
 )
 endif (UNIX)
 

@@ -203,7 +203,10 @@ private:
         printf("Profiler log is saved to: %s\n", json_fn.c_str());
     }
 };
+
 static ProfilerManager g_profileManage;
+
+#if ENABLE_TRACE_LOG
 MyProfile::MyProfile(const std::string &name, const std::vector<std::pair<std::string, std::string>> &args)
 {
     _name = name;
@@ -222,6 +225,7 @@ MyProfile::~MyProfile()
     itm.vecArgs = _args;
     g_profileManage.add(itm);
 }
+#endif // !ENABLE_TRACE_LOG
 
 #if ENABLE_TRACE_MEM_USAGE
 MyProfileMem::MyProfileMem()

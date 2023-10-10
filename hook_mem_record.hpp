@@ -3,7 +3,10 @@
 #include <mutex>
 #include <thread>
 
-// Not thread safe
+/*************************************************
+ * RecordMem will record each malloc's size.
+ * The size will be reduced when free be called.
+**************************************************/
 class RecordMem
 {
     struct MemPair
@@ -23,6 +26,7 @@ class RecordMem
 
     RecordMem()
     {
+        // Do not print.
         memPairs = new MemPair[COUNTER_SIZE];
         if (memPairs == nullptr)
         {

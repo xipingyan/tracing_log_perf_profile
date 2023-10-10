@@ -6,11 +6,11 @@
 #include "dump_profile.hpp"
 // Refer: https://linux.die.net/man/3/__malloc_hook
 
-#if ENABLE_TRACE_MEM_USAGE
 #include "hook_mem_record.hpp"
-
 // initializing instancePtr with NULL
 RecordMem *RecordMem::instancePtr = NULL;
+
+#if ENABLE_TRACE_MEM_USAGE
 
 // Control if print log.
 #define PRINT_LOG 0
