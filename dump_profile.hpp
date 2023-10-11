@@ -4,11 +4,17 @@
 
 // Control whether or not tp save tracing log.
 #define ENABLE_TRACE_LOG 1
+
 // Control whether or not to print memory usage to a log file.
+#include <features.h>
+#if __GLIBC_PREREQ(2, 34)
+// If glibc > 2.34, it removes __malloc_hook, so we have to disable memory statistic.
+#define ENABLE_TRACE_MEM_USAGE 0
+#else
 #define ENABLE_TRACE_MEM_USAGE 1
+#endif
 
 #if ENABLE_TRACE_MEM_USAGE
-
 #ifndef CAT
 #define TOKEN_PASTE(x, y) x##y
 #define CAT(x,y) TOKEN_PASTE(x,y)
