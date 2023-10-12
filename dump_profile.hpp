@@ -37,16 +37,19 @@ class MyProfile
 public:
     MyProfile() = delete;
     MyProfile(const std::string &name, const std::vector<std::pair<std::string, std::string>> &args = std::vector<std::pair<std::string, std::string>>());
+    MyProfile(const std::string &name, bool bMem);
     ~MyProfile();
 
 private:
     std::string _name;
     uint64_t _ts1;
+    bool _bMem = false;
     std::vector<std::pair<std::string, std::string>> _args;
 };
 
 #define MY_PROFILE_VAR(VAR, NAME) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__))
 #define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__), __VA_ARGS__)
+#define MY_PROFILE_VAR_MEM(VAR, NAME, ...) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__), true)
 // Example 2: MY_PROFILE_VAR / MY_PROFILE_VAR_ARGS
 /******************************************************
 MY_PROFILE_VAR(p, "fun_name")

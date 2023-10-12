@@ -214,6 +214,15 @@ MyProfile::MyProfile(const std::string &name, const std::vector<std::pair<std::s
     _ts1 = __rdtsc();
 }
 
+MyProfile::MyProfile(const std::string &name, bool bMem) {
+    _name = name;
+    _bMem = bMem;
+    if(_bMem) {
+        MY_PROFILE_MEM();
+    }
+    _ts1 = __rdtsc();
+}
+
 MyProfile::~MyProfile()
 {
     dump_items itm;
@@ -222,6 +231,9 @@ MyProfile::~MyProfile()
     itm.name = _name;
     itm.tid = get_thread_id();
     itm.cat = "PERF";
+    if(_bMem) {
+        MY_PROFILE_MEM();
+    }
     itm.vecArgs = _args;
     g_profileManage.add(itm);
 }
