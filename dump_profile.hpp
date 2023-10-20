@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <cstring>
 
 // Control whether or not tp save tracing log.
 #define ENABLE_TRACE_LOG 1
@@ -14,43 +15,70 @@
 #define ENABLE_TRACE_MEM_USAGE 1
 #endif
 
-#if ENABLE_TRACE_MEM_USAGE
 #ifndef CAT
 #define TOKEN_PASTE(x, y) x##y
 #define CAT(x,y) TOKEN_PASTE(x,y)
 #endif // CAT
 
-class MyProfileMem
-{
-public:
-    MyProfileMem();
-    ~MyProfileMem() = default;
-};
-#define MY_PROFILE_MEM() auto CAT(var_, __LINE__) = MyProfileMem()
-#else
-#define MY_PROFILE_MEM()
-#endif // !ENABLE_TRACE_MEM_USAGE
-
 #if ENABLE_TRACE_LOG
+
+struct MyStr {
+    char _str[64] = {0};
+    void set(const char* str) {
+        if(str!=nullptr) {
+            std::memcpy( _str, str, std::min(63lu, strlen(str)));
+        }
+    }
+    char* get() {
+        return _str;
+    }
+    MyStr& operator=(MyStr& other) {
+        if(other._str != this->_str) {
+            std::memcpy(this->_str, other._str, 64);
+        }
+        return *this;
+    }
+};
+
 class MyProfile
 {
 public:
     MyProfile() = delete;
-    MyProfile(const std::string &name, const std::vector<std::pair<std::string, std::string>> &args = std::vector<std::pair<std::string, std::string>>());
-    MyProfile(const std::string &name, bool bMem);
+    MyProfile(const char* name, const char* key = nullptr, const char* val = nullptr);
     ~MyProfile();
 
-private:
-    std::string _name;
+protected:
+    MyStr _name;
     uint64_t _ts1;
-    bool _bMem = false;
-    std::vector<std::pair<std::string, std::string>> _args;
+    MyStr _key;
+    MyStr _val;
 };
 
-#define MY_PROFILE_VAR(VAR, NAME) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__))
-#define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__), __VA_ARGS__)
-#define MY_PROFILE_VAR_MEM(VAR, NAME, ...) auto VAR = MyProfile(NAME + std::string(":") + std::to_string(__LINE__), true)
-// Example 2: MY_PROFILE_VAR / MY_PROFILE_VAR_ARGS
+class MyProfileMem
+{
+public:
+    MyProfileMem() = delete;
+    MyProfileMem(const char*name, const char* key = nullptr, const char* val = nullptr);
+    ~MyProfileMem();
+private:
+    MyStr _name;
+    uint64_t _ts1;
+    MyStr _key;
+    MyStr _val;
+    int64_t _mem_sz = 0;
+};
+
+// Add line NO.
+// #define ADD_LINE_NO(NAME) (NAME + std::string(":") + std::to_string(__LINE__))
+#define ADD_LINE_NO(NAME) NAME
+
+#define MY_PROFILE_VAR(VAR, NAME) auto VAR = MyProfile(ADD_LINE_NO(NAME))
+#define MY_PROFILE_VAR_ARG(VAR, NAME, key, val) auto VAR = MyProfile(ADD_LINE_NO(NAME), key, val)
+#if ENABLE_TRACE_MEM_USAGE
+#define MY_PROFILE_VAR_MEM(VAR, NAME) auto VAR = MyProfileMem(ADD_LINE_NO(NAME))
+#endif
+
+// Example 2: MY_PROFILE_VAR / MY_PROFILE_VAR_ARG
 /******************************************************
 MY_PROFILE_VAR(p, "fun_name")
 Or
@@ -60,11 +88,12 @@ Or
 }
 Or
 {
-    MY_PROFILE_VAR_ARGS(p2, "fun_name", {{"arg1", "sleep 30 ms"}});
+    MY_PROFILE_VAR_ARG(p2, "fun_name", {{"arg1", "sleep 30 ms"}});
     func()
 }
 ******************************************************/
 #else
 #define MY_PROFILE_VAR(VAR, NAME) 
-#define MY_PROFILE_VAR_ARGS(VAR, NAME, ...) 
+#define MY_PROFILE_VAR_ARG(VAR, NAME, key, val)
+#define MY_PROFILE_VAR_MEM(VAR, NAME, key, val)
 #endif

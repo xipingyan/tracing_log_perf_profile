@@ -6,17 +6,19 @@
 #include "mylib/mylib.hpp"
 
 #define TIP_TEST() std::cout << "== Test: " << __FUNCTION__ << std::endl
+#define EXECUTE_FUN(FUN) std::cout << "Execute: " << #FUN << std::endl; FUN
+
 void example_1()
 {
     TIP_TEST();
-    // Example: MY_PROFILE_VAR, MY_PROFILE_VAR_ARGS
+    // Example: MY_PROFILE_VAR, MY_PROFILE_VAR_ARG
     MY_PROFILE_VAR(p, __FUNCTION__);
     {
         MY_PROFILE_VAR(p1, "sleep_20");
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     {
-        MY_PROFILE_VAR_ARGS(p2, "sleep_30", {{"arg1", "sleep 30 ms"}});
+        MY_PROFILE_VAR_ARG(p2, "sleep_30", "arg1", "sleep 30 ms");
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
 }
@@ -25,8 +27,6 @@ void example_2()
 {
     TIP_TEST();
     // Example: MY_PROFILE_MEM, MY_PROFILE_VAR
-#define EXECUTE_FUN(FUN) std::cout << "Execute: " << #FUN << std::endl; FUN; MY_PROFILE_MEM()
-    MY_PROFILE_MEM();
     MY_PROFILE_VAR(p, __FUNCTION__);
     EXECUTE_FUN(float *arr = new float[1024]);
     {
@@ -36,7 +36,7 @@ void example_2()
         EXECUTE_FUN(delete[] arr2);
     }
     {
-        MY_PROFILE_VAR_ARGS(p2, "sleep_30", {{"arg1", "sleep 30 ms"}});
+        MY_PROFILE_VAR_ARG(p2, "sleep_30", "arg1", "sleep 30 ms");
         
         EXECUTE_FUN(void *pbuf2 = malloc(1024));
 
@@ -51,36 +51,43 @@ void example_2()
 void example_2_1()
 {
     TIP_TEST();
-#define EXECUTE_FUN_2_1(FUN) std::cout << "Execute: " << #FUN << std::endl; FUN
+    int *pbuftmp = NULL;
     MY_PROFILE_VAR_MEM(p, __FUNCTION__);
     {
-        MY_PROFILE_VAR_MEM(p1, "sleep_20");
-        EXECUTE_FUN_2_1(float *arr2 = new float[1024]);
+        MY_PROFILE_VAR_MEM(p1, "sleep_20_increas_4096");
+        EXECUTE_FUN(float *arr2 = new float[1024]);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        EXECUTE_FUN_2_1(delete[] arr2);
+        EXECUTE_FUN(delete[] arr2);
+        EXECUTE_FUN(pbuftmp = new int[1024]);
     }
     {
-        MY_PROFILE_VAR_MEM(p1, "sleep_30");
-        EXECUTE_FUN_2_1(std::vector<float> vv(30););
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        MY_PROFILE_VAR_MEM(p1, "sleep_10_reduce_4096");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        EXECUTE_FUN(delete[] pbuftmp);
+        pbuftmp = nullptr;
+    }
+    {
+        MY_PROFILE_VAR_MEM(p1, "sleep_15");
+        EXECUTE_FUN(std::vector<float> vv(30););
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        EXECUTE_FUN(pbuftmp = new int[1024]);
     }
 }
 
 void example_3() {
     TIP_TEST();
     MY_PROFILE_VAR(p, __FUNCTION__);
-    MY_PROFILE_MEM();
     test_lib_fun();
-    MY_PROFILE_MEM();
 }
 
 int main(int argc, char **argv)
 {
-    example_1();
+   // example_1();
 #if ENABLE_TRACE_MEM_USAGE
-    example_2();
+    //example_2();
     example_2_1();
 #endif
-    example_3();
+    //example_3();
+    EXECUTE_FUN(printf("Finish main.\n"));
     return 0;
 }

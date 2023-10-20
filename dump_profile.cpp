@@ -6,6 +6,7 @@
 #include <mutex>
 #include <vector>
 #include <iostream>
+#include <limits>
 
 #ifdef _WIN32
 #include <intrin.h>
@@ -17,29 +18,32 @@
 #pragma intrinsic(__rdtsc)
 
 #if ENABLE_TRACE_MEM_USAGE
+static int64_t g_min_mem_size = 0x7FFFFFFFFFFFFFFF;
 struct dump_mem_items
 {
     std::string name;      // The name of the event, as displayed in Trace Viewer
-    std::string ph = "C";  // The event type, 'B'/'E' OR 'X'
-    std::string pid = "0"; // The process ID for the process
+    // std::string ph = "C";  // The event type, 'B'/'E' OR 'X'
+    // std::string pid = "0"; // The process ID for the process
     std::string tid;
     uint64_t ts = 0;
     // Args
-    std::vector<std::pair<std::string, std::string>> vecArgs;
+    std::string mem_key;
+    int64_t mem_sz = 0;
 };
 #endif // ENABLE_TRACE_MEM_USAGE
 
 struct dump_items
 {
-    std::string name;      // The name of the event, as displayed in Trace Viewer
-    std::string cat;       // The event categories
-    std::string ph = "X";  // The event type, 'B'/'E' OR 'X'
-    std::string pid = "0"; // The process ID for the process
-    std::string tid;       // The thread ID for the thread that output this event.
+    MyStr name;      // The name of the event, as displayed in Trace Viewer
+    // MyStr cat = "PERF";       // The event categories
+    // MyStr ph = "X";  // The event type, 'B'/'E' OR 'X'
+    // MyStr pid = "0"; // The process ID for the process
+    std::thread::id tid = std::this_thread::get_id();       // The thread ID for the thread that output this event.
     uint64_t ts1 = 0;      // The tracing clock timestamp of the event, [microsecond]
     uint64_t ts2 = 0;      // Duration = ts2 - ts1.
-    std::string tts;       // Optional. The thread clock timestamp of the event
-    std::vector<std::pair<std::string, std::string>> vecArgs;
+    // std::string tts;       // Optional. The thread clock timestamp of the event
+    MyStr key; // Avoiding to malloc/free, just keep a pair.
+    MyStr val;
 };
 
 static inline std::string get_thread_id()
@@ -88,6 +92,9 @@ protected:
 public:
     ProfilerManager()
     {
+        _vecMemItems.reserve(1024*1024);
+        _vecItems.reserve(1024*1024);
+
         if (tsc_ticks_per_second == 0)
         {
             uint64_t expected = 0;
@@ -97,6 +104,10 @@ public:
             tsc_ticks_base.compare_exchange_strong(expected, __rdtsc());
             std::cout << "=== ProfilerManager: tsc_ticks_base = " << tsc_ticks_base << std::endl;
         }
+    }
+
+    int64_t get_mem_size() {
+        return _vecItems.capacity() * sizeof(dump_items) + _vecMemItems.capacity()*sizeof(dump_mem_items);
     }
 
     ProfilerManager(ProfilerManager &other) = delete;
@@ -161,36 +172,37 @@ private:
             // Write 1 event
             fprintf(pf, "{");
             fprintf(pf, "\"name\":\"%s\",", itm.name.c_str());
-            fprintf(pf, "\"ph\":\"%s\",", itm.ph.c_str());
-            fprintf(pf, "\"pid\":\"%s\",", itm.pid.c_str());
+            fprintf(pf, "\"ph\":\"C\",");
+            fprintf(pf, "\"pid\":\"0\",");
             fprintf(pf, "\"ts\":\"%s\",", tsc_to_nsec(itm.ts).c_str());
             fprintf(pf, "\"args\":{");
-            for (size_t j = 0; j < itm.vecArgs.size(); j++)
-            {
-                fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
+            if(itm.mem_sz) {
+                fprintf(pf, "\"%s\":\"%ld\" ", itm.mem_key.c_str(), itm.mem_sz - g_min_mem_size);
             }
             fprintf(pf, "}},\n");
         }
         fprintf(pf, "{}%s\n", (_vecItems.size() == 0) ? "" : ",");
 #endif
 
+        // Save tracing log:
+        // MyStr cat;       // The event categories
+    // MyStr ph = "X";  // The event type, 'B'/'E' OR 'X'
+    // MyStr pid = "0"; // The process ID for the process
+
         for (size_t i = 0; i < _vecItems.size(); i++)
         {
             auto &itm = _vecItems[i];
             // Write 1 event
             fprintf(pf, "{");
-            fprintf(pf, "\"name\":\"%s\",", itm.name.c_str());
-            fprintf(pf, "\"cat\":\"%s\",", itm.cat.c_str());
-            fprintf(pf, "\"ph\":\"%s\",", itm.ph.c_str());
-            fprintf(pf, "\"pid\":\"%s\",", itm.pid.c_str());
-            fprintf(pf, "\"tid\":\"%s\",", itm.tid.c_str());
+            fprintf(pf, "\"name\":\"%s\",", itm.name._str);
+            fprintf(pf, "\"cat\":\"PERF\",");
+            fprintf(pf, "\"ph\":\"X\",");
+            fprintf(pf, "\"pid\":\"0\",");
+            fprintf(pf, "\"tid\":\"%u\",", *static_cast<unsigned int*>(static_cast<void*>(&itm.tid)));
             fprintf(pf, "\"ts\":\"%s\",", tsc_to_nsec(itm.ts1).c_str());
             fprintf(pf, "\"dur\":\"%s\",", tsc_to_nsec(itm.ts1, itm.ts2).c_str());
             fprintf(pf, "\"args\":{");
-            for (size_t j = 0; j < itm.vecArgs.size(); j++)
-            {
-                fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
-            }
+            fprintf(pf, "\"%s\":\"%s\"", itm.key._str, itm.val._str);
             fprintf(pf, "}},\n");
         }
         if (_vecItems.size() > 0)
@@ -207,19 +219,11 @@ private:
 static ProfilerManager g_profileManage;
 
 #if ENABLE_TRACE_LOG
-MyProfile::MyProfile(const std::string &name, const std::vector<std::pair<std::string, std::string>> &args)
+MyProfile::MyProfile(const char* name, const char* key, const char* val)
 {
-    _name = name;
-    _args = args;
-    _ts1 = __rdtsc();
-}
-
-MyProfile::MyProfile(const std::string &name, bool bMem) {
-    _name = name;
-    _bMem = bMem;
-    if(_bMem) {
-        MY_PROFILE_MEM();
-    }
+    _name.set(name);
+    _key.set(key);
+    _val.set(val);
     _ts1 = __rdtsc();
 }
 
@@ -229,25 +233,67 @@ MyProfile::~MyProfile()
     itm.ts2 = __rdtsc();
     itm.ts1 = _ts1;
     itm.name = _name;
-    itm.tid = get_thread_id();
-    itm.cat = "PERF";
-    if(_bMem) {
-        MY_PROFILE_MEM();
-    }
-    itm.vecArgs = _args;
+    itm.tid = std::this_thread::get_id();
+    itm.key = _key;
+    itm.val = _val;
     g_profileManage.add(itm);
 }
 #endif // !ENABLE_TRACE_LOG
 
 #if ENABLE_TRACE_MEM_USAGE
-MyProfileMem::MyProfileMem()
+inline int64_t get_allocated_mem_size() {
+    auto tmp = (int64_t)RecordMem::getInstance()->getMemSize() - g_profileManage.get_mem_size();
+    g_min_mem_size = std::min(g_min_mem_size, tmp);
+    return tmp;
+}
+
+MyProfileMem::MyProfileMem(const char* name, const char* key, const char* val)
 {
-    dump_mem_items itm;
-    itm.ts = __rdtsc();
-    itm.name = "mem";
-    itm.tid = get_thread_id();
-    auto mem_size = RecordMem::getInstance()->getMemSize();
-    itm.vecArgs.push_back({"cats", std::to_string(mem_size)});
-    g_profileManage.add_mem(itm);
+    _name.set(name);
+    _key.set(key);
+    _val.set(val);
+    _ts1 = __rdtsc();
+    _mem_sz = get_allocated_mem_size();
+}
+
+MyProfileMem::~MyProfileMem() {
+    int64_t mem_diff = get_allocated_mem_size() - _mem_sz;
+
+    // Start
+    dump_mem_items itm1;
+    itm1.ts = _ts1;
+    itm1.name = "mem";
+    itm1.tid = get_thread_id();
+    itm1.mem_key="cats";
+    itm1.mem_sz=_mem_sz;
+    g_profileManage.add_mem(itm1);
+    // End
+    dump_mem_items itm2;
+    itm2.ts = __rdtsc();
+    itm2.name = "mem";
+    itm2.tid = get_thread_id();
+    itm2.mem_key="cats";
+    itm2.mem_sz=get_allocated_mem_size();
+    g_profileManage.add_mem(itm2);
+
+    // Tracing log
+    dump_items itm;
+    itm.ts2 = __rdtsc();
+    itm.ts1 = _ts1;
+    itm.name = _name;
+    itm.key = _key;
+    itm.val = _val;
+    g_profileManage.add(itm);
+
+
+
+    // Diff
+    // dump_mem_items itm2;
+    // itm2.ts = _ts1;
+    // itm2.name = "mem_diff";
+    // itm2.tid = get_thread_id();
+    // itm2.mem_key="cats";
+    // itm2.mem_sz=mem_diff;
+    // g_profileManage.add_mem(itm2);
 }
 #endif // !ENABLE_TRACE_MEM_USAGE

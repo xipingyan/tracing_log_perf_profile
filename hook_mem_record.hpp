@@ -40,11 +40,17 @@ class RecordMem
         std::lock_guard<std::mutex> lk(_mutex);
         current_mem_size += sz;
         mem_peak = std::max(current_mem_size, mem_peak);
+        #ifdef _DEBUG
+        printf("-->Add: cur_sz=%lu, add_sz=%lu, peak_sz=%lu\n", current_mem_size, sz, mem_peak);
+        #endif
     }
     void reduceMemSize(const size_t& sz)
     {
         std::lock_guard<std::mutex> lk(_mutex);
         current_mem_size -= sz;
+        #ifdef _DEBUG
+        printf("-->Reduce: cur_sz=%lu, reduce_sz=%lu, peak_sz=%lu\n", current_mem_size, sz, mem_peak);
+        #endif
     }
 
 public:
