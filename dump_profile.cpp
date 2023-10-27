@@ -115,15 +115,17 @@ private:
         FILE *pf;
 #ifdef _WIN32
         errno_t err = fopen_s(&pf, json_fn.c_str(), "wb");
-        if (err != 0)
-#else
-        pf = fopen(json_fn.c_str(), "wb");
-        if (nullptr == pf)
-#endif
-        {
+        if (err != 0) {
             printf("Can't fopen:%s", json_fn.c_str());
             return;
         }
+#else
+        pf = fopen(json_fn.c_str(), "wb");
+        if (nullptr == pf) {
+            printf("Can't fopen:%s", json_fn.c_str());
+            return;
+        }
+#endif
 
         // Headers
         fprintf(pf, "{\n\"schemaVersion\": 1,\n\"traceEvents\":[\n");
