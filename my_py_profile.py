@@ -69,8 +69,15 @@ class ManageProfile:
         json_fn = "myprofile.json"
         with open(json_fn, "w") as outfile:
             outfile.write(json_object)
+        print(f'Saved profiling result to {json_fn}')
 
 g_manage_profile=ManageProfile()
+
+# Release 'g_manage_profile' manually in order to trigger save result json file.
+def profile_finish():
+    global g_manage_profile
+    del g_manage_profile
+
 # It's easy to compare and view when we minus min value.
 g_min_uss=sys.maxsize
 

@@ -1,6 +1,6 @@
 import time
 import sys
-from my_py_profile import MyProfile
+from my_py_profile import MyProfile, profile_finish
 
 def example_1():
     print(f"Execute: {sys._getframe().f_code.co_name}")
@@ -40,3 +40,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    # For complex application, we need to trigger save profile result.
+    profile_finish()

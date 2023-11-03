@@ -1,6 +1,6 @@
 import time
 import sys
-from my_py_profile import MyProfile
+from my_py_profile import MyProfile, profile_finish
 
 import numpy as np
 import openvino.runtime as ov
@@ -21,4 +21,6 @@ def main():
         frame_results = infer_request.infer(input_data)
     print(f"frame_results={type(frame_results)}")
 if __name__ == "__main__":
-    main()
+    main()    
+    # For complex application, we need to trigger save profile result.
+    profile_finish()
