@@ -8,6 +8,9 @@ file(GLOB SOURCES "./*.cpp")
 
 add_executable(${PRJ_NAME} ${SOURCES})
 
+find_package(Threads REQUIRED)
+target_link_libraries(${PRJ_NAME} Threads::Threads)
+
 if (UNIX)
 target_link_libraries(${PRJ_NAME} 
     dl # For dladdr
