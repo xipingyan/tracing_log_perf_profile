@@ -6,6 +6,10 @@
 #include <vector>
 #include <iostream>
 
+#ifdef __linux__
+#include <unistd.h>
+#endif
+
 #ifdef _WIN32
 #include <intrin.h>
 #include <Windows.h>
@@ -14,6 +18,26 @@
 #include <dlfcn.h>
 #endif
 #pragma intrinsic(__rdtsc)
+
+#ifdef __linux__
+static bool read_rss_bytes(uint64_t &rss_bytes)
+{
+    FILE *file = fopen("/proc/self/statm", "r");
+    if (file == nullptr)
+        return false;
+
+    unsigned long long total_pages = 0;
+    unsigned long long resident_pages = 0;
+    int read_count = fscanf(file, "%llu %llu", &total_pages, &resident_pages);
+    fclose(file);
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (read_count != 2 || page_size <= 0)
+        return false;
+
+    rss_bytes = resident_pages * static_cast<uint64_t>(page_size);
+    return true;
+}
+#endif
 
 struct dump_items
 {
@@ -25,6 +49,11 @@ struct dump_items
     uint64_t ts1 = 0;      // The tracing clock timestamp of the event, [microsecond]
     uint64_t ts2 = 0;      // Duration = ts2 - ts1.
     std::string tts;       // Optional. The thread clock timestamp of the event
+#ifdef __linux__
+    bool has_rss = false;
+    double rss_start_mb = 0;
+    double rss_end_mb = 0;
+#endif
     std::vector<std::pair<std::string, std::string>> vecArgs;
 };
 
@@ -143,6 +172,14 @@ private:
             fprintf(pf, "\"ts\":\"%s\",", tsc_to_nsec(itm.ts1).c_str());
             fprintf(pf, "\"dur\":\"%s\",", tsc_to_nsec(itm.ts1, itm.ts2).c_str());
             fprintf(pf, "\"args\":{");
+#ifdef __linux__
+            if (itm.has_rss)
+            {
+                fprintf(pf, "\"rss_start_mb\":%.6f,\"rss_end_mb\":%.6f,\"rss_delta_mb\":%.6f%s",
+                        itm.rss_start_mb, itm.rss_end_mb, itm.rss_end_mb - itm.rss_start_mb,
+                        itm.vecArgs.empty() ? "" : ",");
+            }
+#endif
             for (size_t j = 0; j < itm.vecArgs.size(); j++)
             {
                 fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
@@ -160,6 +197,9 @@ MyProfile::MyProfile(const std::string &name, const std::vector<std::pair<std::s
 {
     _name = name;
     _args = args;
+#ifdef __linux__
+    _has_rss_start = read_rss_bytes(_rss_start_bytes);
+#endif
     _ts1 = __rdtsc();
 }
 
@@ -167,10 +207,19 @@ MyProfile::~MyProfile()
 {
     dump_items itm;
     itm.ts2 = __rdtsc();
+#ifdef __linux__
+    uint64_t rss_end_bytes = 0;
+    if (_has_rss_start && read_rss_bytes(rss_end_bytes))
+    {
+        itm.has_rss = true;
+        itm.rss_start_mb = static_cast<double>(_rss_start_bytes) / 1000000.0;
+        itm.rss_end_mb = static_cast<double>(rss_end_bytes) / 1000000.0;
+    }
+#endif
     itm.ts1 = _ts1;
     itm.name = _name;
     itm.tid = get_thread_id();
     itm.cat = "PERF";
-    itm.vecArgs = _args;
+    itm.vecArgs.insert(itm.vecArgs.end(), _args.begin(), _args.end());
     g_profileManage.add(itm);
 }

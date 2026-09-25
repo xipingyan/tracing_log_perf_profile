@@ -13,6 +13,10 @@ public:
 private:
     std::string _name;
     uint64_t _ts1;
+#ifdef __linux__
+    uint64_t _rss_start_bytes = 0;
+    bool _has_rss_start = false;
+#endif
     std::vector<std::pair<std::string, std::string>> _args;
 };
 
