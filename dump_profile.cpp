@@ -184,7 +184,17 @@ private:
             {
                 fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
             }
-            fprintf(pf, "}}%s\n", i == _vecItems.size() - 1 ? "" : ",");
+            fprintf(pf, "}}");
+#ifdef __linux__
+            if (itm.has_rss)
+            {
+                fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"%s\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f}}",
+                        itm.pid.c_str(), tsc_to_nsec(itm.ts1).c_str(), itm.rss_start_mb);
+                fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"%s\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f}}",
+                        itm.pid.c_str(), tsc_to_nsec(itm.ts2).c_str(), itm.rss_end_mb);
+            }
+#endif
+            fprintf(pf, "%s\n", i == _vecItems.size() - 1 ? "" : ",");
         }
 
         fprintf(pf, "]\n}\n");
