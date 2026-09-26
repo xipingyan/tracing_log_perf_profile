@@ -5,6 +5,9 @@
 #include <new>
 #include <thread>
 #include <vector>
+#ifdef __linux__
+#include <sys/mman.h>
+#endif
 
 void example_1()
 {
@@ -26,6 +29,18 @@ void example_2()
     {
         MY_PROFILE_VAR(p1, "sleep_20");
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        
+        MY_PROFILE_VAR(p2, "sleep_10");
+        auto arr_sz = 1024 * 1024 * 2;
+        float *array = new float[arr_sz];
+        // If the array has not been assigned actual values, we cannot obtain the peak RSS statistics.
+        for (size_t i = 0; i < arr_sz; i++)
+        {
+            array[i] = static_cast<float>(i);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        printf("array[0] = %f\n", array[0]);
+        delete[] array;
     }
     {
         MY_PROFILE_VAR_ARGS(p2, "sleep_30", {{"arg1", "sleep 30 ms"}});
@@ -67,10 +82,27 @@ void example_memory()
     delete[] new_buffer;
     std::free(malloc_buffer);
 }
+#ifdef __linux__
+void example_transient_memory()
+{
+    auto profile = MY_PROFILE("transient_mmap");
+    constexpr size_t allocation_size = 8 * 1024 * 1024;
+    void *buffer = mmap(nullptr, allocation_size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (buffer == MAP_FAILED)
+        throw std::bad_alloc();
+    std::memset(buffer, 1, allocation_size);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    munmap(buffer, allocation_size);
+}
+#endif
 int main(int argc, char **argv)
 {
     example_1();
     example_2();
     example_memory();
+#ifdef __linux__
+    example_transient_memory();
+#endif
     return 0;
 }

@@ -3,6 +3,12 @@
 #include <string>
 #include <vector>
 
+// Linux 内存统计默认关闭；只统计耗时时无需设置环境变量。
+// 启动程序前设置 ENABLE_PROFILE_MEM=ON（也支持 TRUE、1；字母不区分大小写），
+// 例如：export ENABLE_PROFILE_MEM=ON
+// 启用后，trace 中会包含作用域的 RSS 起始值、结束值、增量及采样峰值，
+// 并输出内存曲线；关闭时不读取 RSS，也不启动内存采样线程。
+// 环境变量仅在进程启动时读取；目前内存统计仅支持 Linux。
 class MyProfile
 {
 public:
@@ -14,7 +20,10 @@ private:
     std::string _name;
     uint64_t _ts1;
 #ifdef __linux__
+    friend class RssSampler;
     uint64_t _rss_start_bytes = 0;
+    uint64_t _rss_peak_bytes = 0;
+    uint64_t _rss_peak_tsc = 0;
     bool _has_rss_start = false;
 #endif
     std::vector<std::pair<std::string, std::string>> _args;
