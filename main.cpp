@@ -1,7 +1,14 @@
 #include "dump_profile.hpp"
+#include <openvino/openvino.hpp>
+#include <openvino/op/constant.hpp>
+#include <openvino/op/matmul.hpp>
+#include <openvino/op/parameter.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
+#include <memory>
 #include <new>
 #include <thread>
 #include <vector>
@@ -96,6 +103,71 @@ void example_transient_memory()
     munmap(buffer, allocation_size);
 }
 #endif
+
+void example_openvino_memory()
+{
+    constexpr size_t input_size = 4096;
+    constexpr size_t output_size = 3072;
+    constexpr size_t weight_count = input_size * output_size; // 12,582,912 FP32 values (~50.3 MB)
+    auto lifecycle = MY_PROFILE("openvino_lifecycle");
+
+    std::unique_ptr<ov::Core> core;
+    {
+        auto profile = MY_PROFILE("openvino_create_core");
+        core = std::make_unique<ov::Core>();
+    }
+
+    std::shared_ptr<ov::Model> model;
+    {
+        auto profile = MY_PROFILE("openvino_create_model");
+        auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, input_size});
+        ov::Tensor weights(ov::element::f32, ov::Shape{input_size, output_size});
+        float *data = weights.data<float>();
+        for (size_t i = 0; i < weight_count; ++i)
+            data[i] = static_cast<float>((i % 251) + 1) / 251.0f;
+
+        auto constant = std::make_shared<ov::op::v0::Constant>(weights);
+        auto matmul = std::make_shared<ov::op::v0::MatMul>(input, constant, false, false);
+        model = std::make_shared<ov::Model>(ov::OutputVector{matmul}, ov::ParameterVector{input}, "rss_matmul");
+    }
+
+    ov::CompiledModel compiled_model;
+    {
+        auto profile = MY_PROFILE("openvino_compile_model");
+        compiled_model = core->compile_model(model, "CPU");
+    }
+    {
+        auto profile = MY_PROFILE("openvino_release_model");
+        model.reset(); // Do not keep the source graph/weights alive when measuring compiled-model release.
+    }
+
+    ov::InferRequest request;
+    {
+        auto profile = MY_PROFILE("openvino_create_infer_request");
+        request = compiled_model.create_infer_request();
+    }
+    {
+        auto profile = MY_PROFILE("openvino_infer");
+        ov::Tensor input(ov::element::f32, ov::Shape{1, input_size});
+        std::fill_n(input.data<float>(), input_size, 1.0f);
+        request.set_input_tensor(input);
+        request.infer();
+        std::cout << "OpenVINO MatMul output[0] = " << request.get_output_tensor().data<float>()[0] << '\n';
+    }
+    {
+        auto profile = MY_PROFILE("openvino_release_infer_request");
+        request = ov::InferRequest{}; // A live request can retain compiled-model memory.
+    }
+    {
+        auto profile = MY_PROFILE("openvino_release_compiled_model");
+        compiled_model = ov::CompiledModel{};
+    }
+    {
+        auto profile = MY_PROFILE("openvino_release_core");
+        core.reset(); // CPU plugin and runtime caches may outlive the compiled model.
+    }
+}
+
 int main(int argc, char **argv)
 {
     example_1();
@@ -104,5 +176,6 @@ int main(int argc, char **argv)
 #ifdef __linux__
     example_transient_memory();
 #endif
+    example_openvino_memory();
     return 0;
 }

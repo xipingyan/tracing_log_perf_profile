@@ -23,7 +23,7 @@ private:
     friend class RssSampler;
     uint64_t _rss_start_bytes = 0;
     uint64_t _rss_peak_bytes = 0;
-    uint64_t _rss_peak_tsc = 0;
+    uint64_t _rss_min_bytes = 0;
     bool _has_rss_start = false;
 #endif
     std::vector<std::pair<std::string, std::string>> _args;

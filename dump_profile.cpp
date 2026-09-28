@@ -7,6 +7,7 @@
 #include <iostream>
 #include <algorithm>
 #include <condition_variable>
+#include <map>
 
 #ifdef __linux__
 #include <cstdlib>
@@ -51,16 +52,70 @@ static bool read_rss_bytes(uint64_t &rss_bytes)
     return true;
 }
 
+struct RssSegment
+{
+    uint64_t start_tsc;
+    uint64_t end_tsc;
+    uint64_t start_bytes;
+    uint64_t end_bytes;
+    uint64_t peak_bytes;
+    uint64_t min_bytes;
+    size_t depth;
+};
+
 // One sampling thread serves all active scopes; the lock also protects each
-// scope's peak from concurrent updates during its destruction.
+// scope's extrema from concurrent updates during its destruction.
 class RssSampler
 {
+    struct ActiveScope
+    {
+        MyProfile *profile;
+        std::thread::id thread;
+        size_t depth;
+    };
     const bool _enabled = memory_profiling_enabled();
     std::mutex _mutex;
     std::condition_variable _wake;
-    std::vector<MyProfile *> _active;
+    std::vector<ActiveScope> _active;
+    std::map<std::thread::id, size_t> _thread_depth;
+    std::vector<RssSegment> _segments; // One per visible interval, never one per 1 ms sample.
+    MyProfile *_visible = nullptr;
+    RssSegment _current{};
     bool _stopping = false;
     std::thread _worker;
+
+    void observe(uint64_t bytes, uint64_t timestamp)
+    {
+        for (const auto &active : _active)
+        {
+            MyProfile *profile = active.profile;
+            profile->_rss_peak_bytes = std::max(profile->_rss_peak_bytes, bytes);
+            profile->_rss_min_bytes = std::min(profile->_rss_min_bytes, bytes);
+        }
+        if (_visible)
+        {
+            _current.end_tsc = timestamp;
+            _current.end_bytes = bytes;
+            _current.peak_bytes = std::max(_current.peak_bytes, bytes);
+            _current.min_bytes = std::min(_current.min_bytes, bytes);
+        }
+    }
+
+    void switch_visible(uint64_t timestamp, uint64_t bytes)
+    {
+        const ActiveScope *selected = nullptr;
+        for (const auto &active : _active)
+            if (!selected || active.depth >= selected->depth)
+                selected = &active; // Latest entry wins at equal depths.
+        MyProfile *next = selected ? selected->profile : nullptr;
+        if (next == _visible)
+            return;
+        if (_visible)
+            _segments.push_back(_current);
+        _visible = next;
+        if (selected)
+            _current = {timestamp, timestamp, bytes, bytes, bytes, bytes, selected->depth};
+    }
 
     void run()
     {
@@ -79,15 +134,10 @@ class RssSampler
             uint64_t rss_bytes = 0;
             if (read_rss_bytes(rss_bytes))
             {
-                uint64_t timestamp = __rdtsc();
-                for (MyProfile *profile : _active)
-                {
-                    if (rss_bytes > profile->_rss_peak_bytes)
-                    {
-                        profile->_rss_peak_bytes = rss_bytes;
-                        profile->_rss_peak_tsc = timestamp;
-                    }
-                }
+                const uint64_t timestamp = __rdtsc();
+                observe(rss_bytes, timestamp);
+                if (!_visible)
+                    switch_visible(timestamp, rss_bytes);
             }
         }
     }
@@ -115,13 +165,28 @@ public:
 
     bool enabled() const { return _enabled; }
 
-    void add(MyProfile *profile)
+    bool add(MyProfile *profile)
     {
+        bool has_start;
         {
             std::lock_guard<std::mutex> lock(_mutex);
-            _active.push_back(profile);
+            uint64_t rss_bytes = 0;
+            has_start = read_rss_bytes(rss_bytes);
+            profile->_ts1 = __rdtsc();
+            if (has_start)
+            {
+                observe(rss_bytes, profile->_ts1);
+                profile->_rss_start_bytes = rss_bytes;
+                profile->_rss_peak_bytes = rss_bytes;
+                profile->_rss_min_bytes = rss_bytes;
+                auto thread = std::this_thread::get_id();
+                _active.push_back({profile, thread, ++_thread_depth[thread]});
+                switch_visible(profile->_ts1, rss_bytes);
+            }
         }
-        _wake.notify_one();
+        if (has_start)
+            _wake.notify_one();
+        return has_start;
     }
 
     bool finish(MyProfile *profile, uint64_t &rss_end_bytes, uint64_t &end_tsc)
@@ -129,19 +194,38 @@ public:
         std::lock_guard<std::mutex> lock(_mutex);
         bool has_end = read_rss_bytes(rss_end_bytes);
         end_tsc = __rdtsc();
-        if (has_end && rss_end_bytes > profile->_rss_peak_bytes)
-        {
-            profile->_rss_peak_bytes = rss_end_bytes;
-            profile->_rss_peak_tsc = end_tsc;
-        }
-        auto it = std::find(_active.begin(), _active.end(), profile);
+        if (has_end)
+            observe(rss_end_bytes, end_tsc);
+        auto it = std::find_if(_active.begin(), _active.end(),
+                               [profile](const ActiveScope &active) { return active.profile == profile; });
         if (it != _active.end())
+        {
+            if (--_thread_depth[it->thread] == 0)
+                _thread_depth.erase(it->thread);
             _active.erase(it);
+        }
+        if (has_end)
+            switch_visible(end_tsc, rss_end_bytes);
+        else if (_visible && std::none_of(_active.begin(), _active.end(),
+                                           [this](const ActiveScope &active) { return active.profile == _visible; }))
+        {
+            // No reading at this boundary: end the last measured interval;
+            // the next successful sample starts a fresh one.
+            _segments.push_back(_current);
+            _visible = nullptr;
+        }
         if (_active.empty())
             _wake.notify_one();
         return has_end;
     }
+
+    std::vector<RssSegment> segments()
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _segments;
+    }
 };
+static RssSampler g_rssSampler;
 #endif
 
 struct dump_items
@@ -159,7 +243,7 @@ struct dump_items
     double rss_start_mb = 0;
     double rss_end_mb = 0;
     double rss_peak_mb = 0;
-    uint64_t rss_peak_tsc = 0;
+    double rss_min_mb = 0;
 #endif
     std::vector<std::pair<std::string, std::string>> vecArgs;
 };
@@ -245,6 +329,25 @@ private:
         return std::to_string(val);
     }
 
+#ifdef __linux__
+    void write_rss_counters(FILE *pf)
+    {
+        for (const auto &segment : g_rssSampler.segments())
+        {
+            const uint64_t level = segment.end_bytes > segment.start_bytes ? segment.peak_bytes
+                                 : segment.end_bytes < segment.start_bytes ? segment.min_bytes
+                                                                            : segment.start_bytes;
+            // The first counter holds the block's own extreme; the second
+            // resets it to the measured RSS at this block's end.
+            fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"0\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f,\"scope_depth\":%zu}}",
+                    tsc_to_nsec(segment.start_tsc).c_str(), static_cast<double>(level) / 1000000.0, segment.depth);
+            fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"0\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f,\"scope_depth\":%zu}}",
+                    tsc_to_nsec(segment.end_tsc).c_str(), static_cast<double>(segment.end_bytes) / 1000000.0,
+                    segment.depth);
+        }
+    }
+#endif
+
     void save_to_json()
     {
         std::string json_fn = "profile_" + location() + ".json";
@@ -292,48 +395,29 @@ private:
                 fprintf(pf, "\"%s\":\"%s\"%s", itm.vecArgs[j].first.c_str(), itm.vecArgs[j].second.c_str(), j + 1 == itm.vecArgs.size() ? "" : ",");
             }
             fprintf(pf, "}}");
-#ifdef __linux__
-            if (itm.has_rss)
-            {
-                fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"%s\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f}}",
-                        itm.pid.c_str(), tsc_to_nsec(itm.ts1).c_str(), itm.rss_start_mb);
-                if (itm.rss_peak_tsc != itm.ts1 && itm.rss_peak_tsc != itm.ts2)
-                    fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"%s\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f}}",
-                        itm.pid.c_str(), tsc_to_nsec(itm.rss_peak_tsc).c_str(), itm.rss_peak_mb);
-                fprintf(pf, ",\n{\"name\":\"Process RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"%s\",\"ts\":%s,\"args\":{\"rss_mb\":%.6f}}",
-                        itm.pid.c_str(), tsc_to_nsec(itm.ts2).c_str(), itm.rss_end_mb);
-                fprintf(pf, ",\n{\"name\":\"Peak RSS\",\"cat\":\"memory\",\"ph\":\"C\",\"pid\":\"%s\",\"ts\":%s,\"args\":{\"peak_mb\":%.6f}}",
-                    itm.pid.c_str(), tsc_to_nsec(itm.ts2).c_str(), itm.rss_peak_mb);
-            }
-#endif
             fprintf(pf, "%s\n", i == _vecItems.size() - 1 ? "" : ",");
         }
 
+        #ifdef __linux__
+            write_rss_counters(pf);
+        #endif
         fprintf(pf, "]\n}\n");
         fclose(pf);
         printf("Profiler log is saved to: %s\n", json_fn.c_str());
     }
 };
 static ProfilerManager g_profileManage;
-#ifdef __linux__
-static RssSampler g_rssSampler;
-#endif
 MyProfile::MyProfile(const std::string &name, const std::vector<std::pair<std::string, std::string>> &args)
 {
     _name = name;
     _args = args;
 #ifdef __linux__
     if (g_rssSampler.enabled())
-        _has_rss_start = read_rss_bytes(_rss_start_bytes);
-#endif
+        _has_rss_start = g_rssSampler.add(this);
+    else
+        _ts1 = __rdtsc();
+#else
     _ts1 = __rdtsc();
-#ifdef __linux__
-    if (_has_rss_start)
-    {
-        _rss_peak_bytes = _rss_start_bytes;
-        _rss_peak_tsc = _ts1;
-        g_rssSampler.add(this);
-    }
 #endif
 }
 
@@ -351,7 +435,7 @@ MyProfile::~MyProfile()
         itm.rss_start_mb = static_cast<double>(_rss_start_bytes) / 1000000.0;
         itm.rss_end_mb = static_cast<double>(rss_end_bytes) / 1000000.0;
         itm.rss_peak_mb = static_cast<double>(_rss_peak_bytes) / 1000000.0;
-        itm.rss_peak_tsc = _rss_peak_tsc;
+        itm.rss_min_mb = static_cast<double>(_rss_min_bytes) / 1000000.0;
     }
 #else
     itm.ts2 = __rdtsc();

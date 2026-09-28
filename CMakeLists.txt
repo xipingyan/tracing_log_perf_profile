@@ -9,7 +9,8 @@ file(GLOB SOURCES "./*.cpp")
 add_executable(${PRJ_NAME} ${SOURCES})
 
 find_package(Threads REQUIRED)
-target_link_libraries(${PRJ_NAME} Threads::Threads)
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+target_link_libraries(${PRJ_NAME} Threads::Threads openvino::runtime)
 
 if (UNIX)
 target_link_libraries(${PRJ_NAME} 
